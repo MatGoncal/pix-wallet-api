@@ -25,6 +25,9 @@ FX quotes lock a synthetic rate for 5 minutes (`quote_id` + `expires_at`).
 3. Compute `target_amount` with half-up rounding via `bcmath` (no float).
 4. Persist `fx_quotes` with `expires_at = now + 5 min`.
 5. Consuming after expiry → **1031** (used by later payout/FX consume; quote create itself always fresh).
+6. `FxService::consume()` claims the rate lock with a conditional update on
+   `consumed_at IS NULL`, so two callers racing on the same quote cannot both
+   claim it. A second use → **1032**.
 
 ## Critérios de aceite
 
@@ -34,12 +37,16 @@ FX quotes lock a synthetic rate for 5 minutes (`quote_id` + `expires_at`).
 - [x] Rate lock default is 300 seconds
 - [x] No float used for money math
 - [x] Pest covers credit-on-paid, balances list, FX quote happy path
+- [x] Consuming a quote stamps `consumed_at`
+- [x] Consuming the same quote twice → 1032, first timestamp preserved
+- [x] Consuming an expired quote → 1031 and leaves `consumed_at` null
 
 ## Códigos de erro
 
 | Código | Situação |
 |--------|----------|
 | 1031 | quote_expired (consumption) |
+| 1032 | quote_consumed (rate lock is single use) |
 
 ## Migrations
 

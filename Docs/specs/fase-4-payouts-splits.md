@@ -17,13 +17,17 @@ recorded; if splits were defined and settlement ledger fails → **1015**.
 ## Fluxo — payout
 
 1. Validate amount/currency/destination; create payout `QUEUED` (no debit).
-2. Dispatch `ProcessPayout` job.
-3. Job locks partner balance; if `available < amount` → mark `FAILED`, surface **1027**.
+2. Dispatch `ProcessPayout` job (`$tries = 5`, backoff `[5, 15, 45, 135]`).
+3. Job guards on `available >= amount` in the update itself; a short balance →
+   mark `FAILED`, surface **1027**.
 4. Else debit available, write ledger `debit`, mark `COMPLETED`.
+5. A retry is safe at any point: the payout only leaves `QUEUED` inside the
+   transaction that debits it, and a payout already past `QUEUED` is skipped.
+   Exhausted retries log a structured failure and leave the payout `QUEUED`.
 
 ## Fluxo — splits
 
-1. Partner owns payment; payment not cancelled.
+1. Partner owns payment; payment still `PENDING`.
 2. Sum of split `amount` must equal payment `amount`.
 3. Upsert `payment_splits` rows for parties (`platform`, `seller`, `affiliate`).
 4. On settlement (`payment.paid`), apply split metadata (already stored); credit
@@ -38,6 +42,9 @@ recorded; if splits were defined and settlement ledger fails → **1015**.
 - [x] Split sum must equal payment amount
 - [x] Splits scoped to owning partner
 - [x] Pest covers payout happy path, insufficient balance, split validation
+- [x] Splits on a payment in any terminal status → 1015, stored lines untouched
+- [x] Processing the same payout twice debits once
+- [x] A payout job that keeps failing lands in `failed_jobs` with a logged reason
 
 ## Códigos de erro
 

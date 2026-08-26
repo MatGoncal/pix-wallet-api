@@ -38,10 +38,43 @@ class FxService
     }
 
     /**
+     * A rate lock is single use: claiming it stamps `consumed_at` so the same
+     * quote can never price two conversions.
+     *
+     * @throws DomainException
+     */
+    public function consume(FxQuote $quote): FxQuote
+    {
+        $this->assertUsable($quote);
+
+        // The guard travels with the write, so two callers racing on the same
+        // quote cannot both walk away believing they claimed it.
+        $claimed = FxQuote::query()
+            ->whereKey($quote->id)
+            ->whereNull('consumed_at')
+            ->update([
+                'consumed_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        $quote->refresh();
+
+        if ($claimed === 0) {
+            throw $this->consumedException($quote);
+        }
+
+        return $quote;
+    }
+
+    /**
      * @throws DomainException
      */
     public function assertUsable(FxQuote $quote): void
     {
+        if ($quote->isConsumed()) {
+            throw $this->consumedException($quote);
+        }
+
         if ($quote->isExpired()) {
             throw new DomainException(
                 1031,
@@ -53,5 +86,18 @@ class FxService
                 ],
             );
         }
+    }
+
+    private function consumedException(FxQuote $quote): DomainException
+    {
+        return new DomainException(
+            1032,
+            'quote_consumed',
+            'FX quote already consumed; a rate lock can only be used once.',
+            [
+                'quote_id' => $quote->id,
+                'consumed_at' => $quote->consumed_at?->toIso8601String(),
+            ],
+        );
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property Carbon|null $expires_at
+ * @property Carbon|null $consumed_at
  * @property Carbon|null $created_at
  */
 class FxQuote extends Model
@@ -44,5 +45,10 @@ class FxQuote extends Model
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    public function isConsumed(): bool
+    {
+        return $this->consumed_at !== null;
     }
 }

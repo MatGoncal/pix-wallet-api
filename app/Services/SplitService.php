@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\PaymentStatusEnum;
 use App\Exceptions\DomainException;
 use App\Models\Partner;
 use App\Models\Payment;
@@ -39,12 +38,19 @@ class SplitService
                 );
             }
 
-            if ($payment->status === PaymentStatusEnum::Cancelled) {
+            // Splits are the allocation rule applied at settlement, so they are
+            // only editable while the payment can still settle. Rewriting them
+            // after the money moved would leave the ledger describing a split
+            // that never happened.
+            if ($payment->status->isTerminal()) {
                 throw new DomainException(
                     1015,
                     'settlement_failed',
-                    'Cannot define splits on a cancelled payment.',
-                    ['payment_id' => $payment->id],
+                    'Cannot define splits on a payment that is no longer open.',
+                    [
+                        'payment_id' => $payment->id,
+                        'status' => $payment->status->value,
+                    ],
                 );
             }
 
