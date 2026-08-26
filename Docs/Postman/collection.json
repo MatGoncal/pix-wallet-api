@@ -1,0 +1,106 @@
+{
+  "info": {
+    "name": "AcmePay pix-wallet-api",
+    "description": "Canonical AcmePay v1 collection (Fases 1–4)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost/v1" },
+    { "key": "apiKey", "value": "acmepay_demo_key_change_me" },
+    { "key": "webhookSecret", "value": "dev-webhook-secret" },
+    { "key": "paymentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Create payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 1500,\n  \"currency\": \"BRL\",\n  \"external_id\": \"order-123\",\n  \"description\": \"Demo charge\"\n}"
+        },
+        "url": "{{baseUrl}}/payments"
+      }
+    },
+    {
+      "name": "Get payment",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{apiKey}}" }],
+        "url": "{{baseUrl}}/payments/{{paymentId}}"
+      }
+    },
+    {
+      "name": "Get balances",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{apiKey}}" }],
+        "url": "{{baseUrl}}/balances"
+      }
+    },
+    {
+      "name": "Create FX quote",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source_currency\": \"BRL\",\n  \"target_currency\": \"USD\",\n  \"amount\": 10000\n}"
+        },
+        "url": "{{baseUrl}}/fx/quotes"
+      }
+    },
+    {
+      "name": "Create payout",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 2500,\n  \"currency\": \"BRL\",\n  \"destination\": { \"type\": \"pix_key\", \"value\": \"synthetic@acme.test\" },\n  \"external_id\": \"payout-77\"\n}"
+        },
+        "url": "{{baseUrl}}/payouts"
+      }
+    },
+    {
+      "name": "Define payment splits",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{apiKey}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"splits\": [\n    { \"party\": \"platform\", \"amount\": 150 },\n    { \"party\": \"seller\", \"amount\": 1200 },\n    { \"party\": \"affiliate\", \"amount\": 150 }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/payments/{{paymentId}}/splits"
+      }
+    },
+    {
+      "name": "Payment webhook (paid)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-AcmePay-Signature", "value": "sha256=COMPUTE_HMAC_LOCALLY" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_demo_1\",\n  \"provider\": \"fake_pix\",\n  \"type\": \"payment.paid\",\n  \"payment_id\": \"{{paymentId}}\",\n  \"occurred_at\": \"2026-08-26T15:05:00Z\",\n  \"data\": {\n    \"provider_tx_id\": \"pix_tx_demo\",\n    \"amount\": 1500,\n    \"currency\": \"BRL\"\n  }\n}"
+        },
+        "url": "{{baseUrl}}/webhooks/payment"
+      }
+    }
+  ]
+}

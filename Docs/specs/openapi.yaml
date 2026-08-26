@@ -1,0 +1,489 @@
+openapi: 3.1.0
+info:
+  title: AcmePay API
+  version: 1.0.0
+  description: |
+    Canonical payments API for the AcmePay portfolio ecosystem.
+    Implementations: pix-wallet-api (Laravel), payment-api-nest (NestJS).
+    Amounts are integer minor units. See Docs/specs/API_CONTRACT.md.
+servers:
+  - url: http://localhost/v1
+    description: Local (Sail / docker-compose)
+  - url: http://localhost:3000/v1
+    description: Local Nest default
+tags:
+  - name: payments
+  - name: webhooks
+  - name: fx
+  - name: balances
+  - name: payouts
+  - name: splits
+paths:
+  /payments:
+    post:
+      tags: [payments]
+      summary: Create PIX cash-in payment
+      operationId: createPayment
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Payment created (PENDING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /payments/{id}:
+    get:
+      tags: [payments]
+      summary: Get payment by id
+      operationId: getPayment
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /webhooks/payment:
+    post:
+      tags: [webhooks]
+      summary: Provider payment webhook (idempotent)
+      operationId: paymentWebhook
+      security:
+        - WebhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebhookEvent'
+      responses:
+        '200':
+          description: Accepted (first delivery or duplicate)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /fx/quotes:
+    post:
+      tags: [fx]
+      summary: Create FX quote with rate lock
+      operationId: createFxQuote
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFxQuoteRequest'
+      responses:
+        '201':
+          description: Quote created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FxQuote'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Business or validation error (e.g. 1031 on consume elsewhere)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /balances:
+    get:
+      tags: [balances]
+      summary: List partner balances by currency
+      operationId: listBalances
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Balances
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalancesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /payouts:
+    post:
+      tags: [payouts]
+      summary: Enqueue async payout
+      operationId: createPayout
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayoutRequest'
+      responses:
+        '202':
+          description: Payout queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: May include insufficient_balance (1027) on confirm paths
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /payments/{id}/splits:
+    post:
+      tags: [splits]
+      summary: Define payment split lines
+      operationId: createPaymentSplits
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSplitsRequest'
+      responses:
+        '201':
+          description: Splits recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SplitsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: May include settlement_failed (1015)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Partner API key as Bearer token
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    WebhookSignature:
+      type: apiKey
+      in: header
+      name: X-AcmePay-Signature
+      description: sha256=<hex HMAC-SHA256 of raw body with WEBHOOK_SECRET>
+  parameters:
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    MoneyAmount:
+      type: integer
+      minimum: 1
+      description: Minor units (centavos/cents). Never float.
+    CurrencyCode:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      examples: [BRL, USD, EUR]
+    PaymentStatus:
+      type: string
+      enum: [PENDING, PAID, EXPIRED, FAILED, CANCELLED]
+    PayoutStatus:
+      type: string
+      enum: [QUEUED, PROCESSING, COMPLETED, FAILED]
+    ErrorBody:
+      type: object
+      required: [code, name, message]
+      properties:
+        code:
+          type: integer
+        name:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    CreatePaymentRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        external_id:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 140
+        expires_in_seconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 1800
+    Payment:
+      type: object
+      required: [id, status, amount, currency, qr_code, copy_paste, expires_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        external_id:
+          type: [string, 'null']
+        qr_code:
+          type: string
+        copy_paste:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        paid_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    PaymentWebhookEvent:
+      type: object
+      required: [event_id, provider, type, payment_id, occurred_at, data]
+      properties:
+        event_id:
+          type: string
+        provider:
+          type: string
+          examples: [fake_pix]
+        type:
+          type: string
+          enum: [payment.paid, payment.expired, payment.failed]
+        payment_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          properties:
+            provider_tx_id:
+              type: string
+            amount:
+              $ref: '#/components/schemas/MoneyAmount'
+            currency:
+              $ref: '#/components/schemas/CurrencyCode'
+          additionalProperties: true
+    WebhookAck:
+      type: object
+      required: [accepted, duplicate]
+      properties:
+        accepted:
+          type: boolean
+        duplicate:
+          type: boolean
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    CreateFxQuoteRequest:
+      type: object
+      required: [source_currency, target_currency, amount]
+      properties:
+        source_currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        target_currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+    FxQuote:
+      type: object
+      required:
+        - quote_id
+        - source_currency
+        - target_currency
+        - source_amount
+        - target_amount
+        - rate
+        - expires_at
+        - created_at
+      properties:
+        quote_id:
+          type: string
+          format: uuid
+        source_currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        target_currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        source_amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        target_amount:
+          type: integer
+          minimum: 0
+        rate:
+          type: string
+          description: Decimal string, not float
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    BalancesResponse:
+      type: object
+      required: [balances]
+      properties:
+        balances:
+          type: array
+          items:
+            type: object
+            required: [currency, available, pending]
+            properties:
+              currency:
+                $ref: '#/components/schemas/CurrencyCode'
+              available:
+                type: integer
+                minimum: 0
+              pending:
+                type: integer
+                minimum: 0
+    CreatePayoutRequest:
+      type: object
+      required: [amount, currency, destination]
+      properties:
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        external_id:
+          type: string
+        destination:
+          type: object
+          required: [type, value]
+          properties:
+            type:
+              type: string
+              enum: [pix_key]
+            value:
+              type: string
+    Payout:
+      type: object
+      required: [id, status, amount, currency, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PayoutStatus'
+        amount:
+          $ref: '#/components/schemas/MoneyAmount'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        external_id:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+    CreateSplitsRequest:
+      type: object
+      required: [splits]
+      properties:
+        splits:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [party, amount]
+            properties:
+              party:
+                type: string
+                enum: [platform, seller, affiliate]
+              amount:
+                $ref: '#/components/schemas/MoneyAmount'
+    SplitsResponse:
+      type: object
+      required: [payment_id, splits]
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+        splits:
+          type: array
+          items:
+            type: object
+            required: [party, amount]
+            properties:
+              party:
+                type: string
+              amount:
+                type: integer
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
