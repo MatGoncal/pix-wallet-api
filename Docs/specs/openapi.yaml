@@ -87,6 +87,12 @@ paths:
                 $ref: '#/components/schemas/WebhookAck'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Malformed event (e.g. payment.paid without data.amount)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /fx/quotes:
     post:
       tags: [fx]
@@ -111,7 +117,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
-          description: Business or validation error (e.g. 1031 on consume elsewhere)
+          description: >-
+            Business or validation error. A quote is single use: consuming it
+            past expires_at reports 1031, consuming it twice reports 1032.
           content:
             application/json:
               schema:
@@ -190,7 +198,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
-          description: May include settlement_failed (1015)
+          description: >-
+            settlement_failed (1015): the lines do not add up to the payment
+            amount, or the payment already left PENDING and its splits are
+            frozen.
           content:
             application/json:
               schema:
@@ -302,6 +313,21 @@ components:
     PaymentWebhookEvent:
       type: object
       required: [event_id, provider, type, payment_id, occurred_at, data]
+      description: |
+        A settlement event must state what it settled, so data.amount and
+        data.currency are required for payment.paid. Implementations refuse to
+        credit a payload whose amount or currency diverges from the stored
+        charge (logged as 1015), and ignore any event that would move a payment
+        out of a terminal status.
+      if:
+        required: [type]
+        properties:
+          type:
+            const: payment.paid
+      then:
+        properties:
+          data:
+            required: [amount, currency]
       properties:
         event_id:
           type: string

@@ -139,6 +139,19 @@ Provider → AcmePay. **Idempotent** on `(provider, event_id)`.
 | `payment.expired` | Transition to `EXPIRED` |
 | `payment.failed` | Transition to `FAILED` |
 
+`data.amount` and `data.currency` are **required** for `payment.paid` (missing →
+**422**, the provider should retry with a complete payload). Other event types
+may send an empty `data` object.
+
+**Status transitions.** `PENDING` is the only open state; `PAID`, `EXPIRED`,
+`FAILED` and `CANCELLED` are terminal. An event that asks for a transition out
+of a terminal state is accepted (**200**, the provider must stop retrying) and
+ignored — a late `payment.paid` never reopens an expired or failed charge.
+
+**Amount check.** A `payment.paid` whose `data.amount`/`data.currency` differ
+from the stored charge is accepted, logged as `1015`, and **not** credited. The
+payment stays `PENDING` so a corrected event can still settle it.
+
 **Response `200` (first delivery)**
 
 ```json
@@ -201,6 +214,9 @@ FX quote with **rate lock** (default **5 minutes**).
 ```
 
 `rate` is a decimal **string**. Consuming after `expires_at` → error **`1031`**.
+
+A rate lock is **single use**: consuming a quote stamps `consumed_at`, and any
+later attempt to consume it → error **`1032`**.
 
 ---
 
@@ -279,6 +295,11 @@ Define split lines applied on settlement (or validate against already-settled pa
 ```
 
 Sum of `amount` must equal payment `amount` (fees rules documented in phase specs). Settlement failure → **`1015`**.
+
+Splits are the allocation rule applied at settlement, so they may only be
+defined while the payment is still `PENDING`. A payment in any terminal status
+(`PAID`, `EXPIRED`, `FAILED`, `CANCELLED`) → **`1015`** with `details.status`,
+and the stored lines are left untouched.
 
 **Response `201`**
 

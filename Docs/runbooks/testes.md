@@ -38,6 +38,11 @@ workers in forked processes via `runConcurrently()`:
 
 That suite needs `pcntl` and `posix`; it skips itself when they are missing.
 
+`QueueResilienceTest` switches to the `database` queue driver and drives a real
+`queue:work --once`. The driver keeps `attempts` in a row the test can
+fast-forward, so it proves the retry-until-`failed_jobs` path without sleeping
+through the exponential backoff.
+
 ## Queue worker (webhooks)
 
 ```bash
