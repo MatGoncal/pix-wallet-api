@@ -26,7 +26,10 @@ class WebhookController extends Controller
                     'payment_id' => $data['payment_id'],
                 ]);
 
-                ProcessPaymentWebhook::dispatch($event->id);
+                // Without afterCommit the worker can pick the job up before the
+                // event row is visible, and a rollback would leave a job that
+                // points at an event that never existed.
+                ProcessPaymentWebhook::dispatch($event->id)->afterCommit();
 
                 return $event;
             });
