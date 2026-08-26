@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use Database\Factories\PartnerBalanceFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PartnerBalance extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<PartnerBalanceFactory> */
+    use HasFactory, HasUuids;
 
     protected $fillable = [
         'partner_id',

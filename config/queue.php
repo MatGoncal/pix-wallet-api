@@ -70,7 +70,9 @@ return [
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
             'block_for' => null,
-            'after_commit' => false,
+            // Redis is the production queue: workers must never see a job whose
+            // originating transaction has not committed yet.
+            'after_commit' => true,
         ],
 
         'deferred' => [

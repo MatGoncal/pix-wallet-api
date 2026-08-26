@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\PayoutStatusEnum;
+use Database\Factories\PayoutFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -14,7 +16,8 @@ use Illuminate\Support\Carbon;
  */
 class Payout extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<PayoutFactory> */
+    use HasFactory, HasUuids;
 
     protected $fillable = [
         'partner_id',
