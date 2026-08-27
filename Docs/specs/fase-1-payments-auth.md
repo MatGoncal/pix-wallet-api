@@ -5,6 +5,9 @@
 Partner authenticates with an API key and creates a PIX cash-in that returns
 QR + copia-e-cola in `PENDING` status.
 
+> Fase 9: QR is fetched from `fake-pix-provider` over HTTP. See
+> `Docs/specs/fase-9-fake-pix-http.md`.
+
 ## Endpoints
 
 | Método | Rota | Auth | Descrição |
@@ -16,7 +19,9 @@ QR + copia-e-cola in `PENDING` status.
 
 1. Middleware resolves partner from API key hash.
 2. `StorePaymentRequest` validates amount (int > 0), currency, optional fields.
-3. `PaymentService` calls `FakePixProvider` for QR payloads.
+3. `PaymentService` generates the payment UUID, then `FakePixProvider` POSTs
+   Go `/v1/charges` (Fase 9). The UUID is assigned on the model (not mass-assigned)
+   so it matches the webhook `payment_id`.
 4. Persist `payments` row as `PENDING`.
 5. Return `201` per `API_CONTRACT.md`.
 

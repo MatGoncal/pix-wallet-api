@@ -4,6 +4,9 @@ use App\Enums\PaymentStatusEnum;
 use App\Models\Partner;
 use App\Models\Payment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -48,6 +51,7 @@ it('creates a pending payment with qr payloads', function () {
         'external_id' => 'order-1',
         'amount' => 1500,
         'status' => PaymentStatusEnum::Pending->value,
+        'provider_tx_id' => null,
     ]);
 });
 
@@ -73,4 +77,67 @@ it('shows payment for owning partner only', function () {
     $this->getJson('/v1/payments/'.$payment->id, [
         'Authorization' => 'Bearer other_key',
     ])->assertNotFound();
+});
+
+it('posts integer amount payment_id and callback_url to fake pix provider', function () {
+    Http::fake([
+        'http://host.docker.internal:8080/v1/charges' => Http::response([
+            'id' => 'chg_http',
+            'status' => 'PENDING',
+            'qr_code' => '00020126ACMEPAY.FAKE.PIX.BRL.1500.1.demo',
+            'copy_paste' => '00020126ACMEPAY.FAKE.PIX.BRL.1500.1.demo',
+            'provider_tx_id' => 'pix_tx_http',
+        ], 201),
+    ]);
+
+    demoPartner();
+
+    $response = $this->postJson('/v1/payments', [
+        'amount' => 1500,
+        'currency' => 'BRL',
+        'external_id' => 'order-http',
+    ], [
+        'Authorization' => 'Bearer test_partner_api_key',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('status', 'PENDING');
+
+    expect($response->json('qr_code'))->toStartWith('00020126ACMEPAY.FAKE.PIX')
+        ->and($response->json('copy_paste'))->toStartWith('00020126ACMEPAY.FAKE.PIX');
+
+    $paymentId = $response->json('id');
+
+    $recorded = Http::recorded();
+    expect($recorded)->not->toBeEmpty();
+    /** @var Request $outbound */
+    $outbound = $recorded[0][0];
+    $data = $outbound->data();
+
+    expect($outbound->url())->toBe('http://host.docker.internal:8080/v1/charges')
+        ->and($outbound->method())->toBe('POST')
+        ->and($data['amount'])->toBe(1500)
+        ->and($data['amount'])->toBeInt()
+        ->and($data['currency'])->toBe('BRL')
+        ->and($data['callback_url'])->toBe('http://localhost/v1/webhooks/payment')
+        ->and($data['payment_id'])->toBe($paymentId);
+});
+
+it('returns 502 when fake pix provider is unreachable', function () {
+    Http::fake(function () {
+        throw new ConnectionException('Connection refused');
+    });
+
+    demoPartner();
+
+    $this->postJson('/v1/payments', [
+        'amount' => 1500,
+        'currency' => 'BRL',
+    ], [
+        'Authorization' => 'Bearer test_partner_api_key',
+    ])->assertStatus(502)
+        ->assertJsonPath('error.code', 502)
+        ->assertJsonPath('error.name', 'bad_gateway');
+
+    expect(Payment::query()->count())->toBe(0);
 });

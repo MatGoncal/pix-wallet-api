@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\PaymentStatusEnum;
 use App\Models\Partner;
 use App\Models\Payment;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class PaymentService
@@ -26,8 +27,9 @@ class PaymentService
             $paymentId,
         );
 
-        return Payment::query()->create([
-            'id' => $paymentId,
+        $payment = new Payment;
+        $payment->id = $paymentId;
+        $payment->fill([
             'partner_id' => $partner->id,
             'status' => PaymentStatusEnum::Pending,
             'amount' => $data['amount'],
@@ -39,6 +41,9 @@ class PaymentService
             'provider' => $charge['provider'],
             'expires_at' => now()->addSeconds($expiresIn),
         ]);
+        $payment->save();
+
+        return $payment;
     }
 
     public function findForPartner(Partner $partner, string $paymentId): ?Payment
@@ -51,7 +56,7 @@ class PaymentService
 
     /**
      * @param  array<string, mixed>  $query
-     * @return array{data: \Illuminate\Support\Collection<int, Payment>, meta: array{page: int, per_page: int, total: int, total_pages: int}}
+     * @return array{data: Collection<int, Payment>, meta: array{page: int, per_page: int, total: int, total_pages: int}}
      */
     public function listForPartner(Partner $partner, array $query): array
     {
