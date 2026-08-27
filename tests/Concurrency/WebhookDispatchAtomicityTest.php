@@ -22,10 +22,7 @@ function atomicitySignedWebhook(Payment $payment, string $eventId): array
         ],
     ];
 
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $secret = (string) config('acmepay.webhook_secret');
-
-    return [$body, 'sha256='.hash_hmac('sha256', $body, $secret)];
+    return signWebhook($payload);
 }
 
 it('enqueues the webhook job only after the transaction commits', function () {

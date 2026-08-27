@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\LedgerDirectionEnum;
 use App\Enums\PaymentStatusEnum;
 use App\Enums\PayoutStatusEnum;
 use App\Exceptions\DomainException;
@@ -8,8 +9,13 @@ use App\Models\Partner;
 use App\Models\PartnerBalance;
 use App\Models\Payment;
 use App\Models\Payout;
+use App\Services\BalanceService;
 use App\Services\FxService;
+use App\Services\PayoutService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+
+uses(RefreshDatabase::class);
 
 uses(RefreshDatabase::class);
 
@@ -30,10 +36,7 @@ function authHeaders(string $key = 'money_partner_key'): array
 
 function signBody(array $payload): array
 {
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $signature = 'sha256='.hash_hmac('sha256', $body, (string) config('acmepay.webhook_secret'));
-
-    return [$body, $signature];
+    return signWebhook($payload);
 }
 
 it('credits partner balance once when payment is paid', function () {
@@ -73,6 +76,7 @@ it('credits partner balance once when payment is paid', function () {
 
     expect($balance)->not->toBeNull()
         ->and($balance->available)->toBe(1500)
+        ->and($balance->pending)->toBe(0)
         ->and(BalanceLedgerEntry::query()->count())->toBe(1);
 
     $this->getJson('/v1/balances', authHeaders())
@@ -117,8 +121,8 @@ it('rejects expired fx quote consumption', function () {
         ->toThrow(DomainException::class);
 });
 
-it('queues payout without debit and completes when funded', function () {
-    config(['queue.default' => 'sync']);
+it('reserves available into pending on payout create without a ledger debit', function () {
+    Queue::fake();
     $partner = moneyPartner();
 
     PartnerBalance::query()->create([
@@ -128,19 +132,12 @@ it('queues payout without debit and completes when funded', function () {
         'pending' => 0,
     ]);
 
-    $response = $this->postJson('/v1/payouts', [
+    $this->postJson('/v1/payouts', [
         'amount' => 2500,
         'currency' => 'BRL',
         'destination' => ['type' => 'pix_key', 'value' => 'synthetic@acme.test'],
-        'external_id' => 'payout-1',
-    ], authHeaders());
-
-    $response->assertStatus(202)
-        ->assertJsonPath('status', 'QUEUED')
-        ->assertJsonPath('amount', 2500);
-
-    $payout = Payout::query()->where('external_id', 'payout-1')->firstOrFail();
-    expect($payout->status)->toBe(PayoutStatusEnum::Completed);
+        'external_id' => 'payout-hold',
+    ], authHeaders())->assertStatus(202)->assertJsonPath('status', 'QUEUED');
 
     $balance = PartnerBalance::query()
         ->where('partner_id', $partner->id)
@@ -148,11 +145,46 @@ it('queues payout without debit and completes when funded', function () {
         ->firstOrFail();
 
     expect($balance->available)->toBe(2500)
+        ->and($balance->pending)->toBe(2500)
+        ->and(BalanceLedgerEntry::query()->count())->toBe(0)
+        ->and(Payout::query()->where('external_id', 'payout-hold')->value('status'))
+        ->toBe(PayoutStatusEnum::Queued);
+});
+
+it('confirms a reserved payout by debiting pending and writing the ledger once', function () {
+    Queue::fake();
+    $partner = moneyPartner();
+
+    PartnerBalance::query()->create([
+        'partner_id' => $partner->id,
+        'currency' => 'BRL',
+        'available' => 5000,
+        'pending' => 0,
+    ]);
+
+    $this->postJson('/v1/payouts', [
+        'amount' => 2500,
+        'currency' => 'BRL',
+        'destination' => ['type' => 'pix_key', 'value' => 'synthetic@acme.test'],
+        'external_id' => 'payout-1',
+    ], authHeaders())->assertStatus(202);
+
+    $payout = Payout::query()->where('external_id', 'payout-1')->firstOrFail();
+    app(PayoutService::class)->process($payout->id);
+
+    $balance = PartnerBalance::query()
+        ->where('partner_id', $partner->id)
+        ->where('currency', 'BRL')
+        ->firstOrFail();
+
+    expect($payout->refresh()->status)->toBe(PayoutStatusEnum::Completed)
+        ->and($balance->available)->toBe(2500)
+        ->and($balance->pending)->toBe(0)
         ->and(BalanceLedgerEntry::query()->where('reference_type', 'payout')->count())->toBe(1);
 });
 
-it('fails payout on confirm when balance is insufficient', function () {
-    config(['queue.default' => 'sync']);
+it('rejects a payout create when available cannot cover the amount', function () {
+    Queue::fake();
     moneyPartner();
 
     $this->postJson('/v1/payouts', [
@@ -160,13 +192,85 @@ it('fails payout on confirm when balance is insufficient', function () {
         'currency' => 'BRL',
         'destination' => ['type' => 'pix_key', 'value' => 'x@acme.test'],
         'external_id' => 'payout-fail',
-    ], authHeaders())->assertStatus(202);
+    ], authHeaders())
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 1027);
 
-    $payout = Payout::query()->where('external_id', 'payout-fail')->firstOrFail();
-
-    expect($payout->status)->toBe(PayoutStatusEnum::Failed)
-        ->and($payout->failure_code)->toBe('1027')
+    expect(Payout::query()->count())->toBe(0)
         ->and(BalanceLedgerEntry::query()->count())->toBe(0);
+});
+
+it('returns pending to available when the payout job hits a domain failure', function () {
+    Queue::fake();
+    $partner = moneyPartner();
+
+    PartnerBalance::query()->create([
+        'partner_id' => $partner->id,
+        'currency' => 'BRL',
+        'available' => 5000,
+        'pending' => 0,
+    ]);
+
+    $payout = app(PayoutService::class)->create($partner, [
+        'amount' => 2500,
+        'currency' => 'BRL',
+        'destination' => ['type' => 'pix_key', 'value' => 'x@acme.test'],
+    ]);
+
+    expect(PartnerBalance::query()->sole()->pending)->toBe(2500);
+
+    $mock = Mockery::mock(app(BalanceService::class))->makePartial();
+    $mock->shouldReceive('confirmDebit')->once()->andThrow(new DomainException(
+        1015,
+        'settlement_failed',
+        'Payout rejected by provider.',
+        [],
+    ));
+
+    (new PayoutService($mock))->process($payout->id);
+
+    $balance = PartnerBalance::query()->sole();
+
+    expect($payout->refresh()->status)->toBe(PayoutStatusEnum::Failed)
+        ->and($payout->failure_code)->toBe('1015')
+        ->and($balance->available)->toBe(5000)
+        ->and($balance->pending)->toBe(0)
+        ->and(BalanceLedgerEntry::query()->count())->toBe(0);
+});
+
+it('does not move pending again when the payout job is replayed', function () {
+    Queue::fake();
+    $partner = moneyPartner();
+
+    PartnerBalance::query()->create([
+        'partner_id' => $partner->id,
+        'currency' => 'BRL',
+        'available' => 5000,
+        'pending' => 0,
+    ]);
+
+    $payout = app(PayoutService::class)->create($partner, [
+        'amount' => 2500,
+        'currency' => 'BRL',
+        'destination' => ['type' => 'pix_key', 'value' => 'x@acme.test'],
+        'external_id' => 'payout-replay',
+    ]);
+
+    app(PayoutService::class)->process($payout->id);
+
+    $payout->forceFill([
+        'status' => PayoutStatusEnum::Queued,
+        'completed_at' => null,
+    ])->save();
+
+    app(PayoutService::class)->process($payout->id);
+
+    $balance = PartnerBalance::query()->sole();
+
+    expect($payout->refresh()->status)->toBe(PayoutStatusEnum::Completed)
+        ->and($balance->available)->toBe(2500)
+        ->and($balance->pending)->toBe(0)
+        ->and(BalanceLedgerEntry::query()->where('direction', LedgerDirectionEnum::Debit)->count())->toBe(1);
 });
 
 it('defines splits that sum to payment amount', function () {

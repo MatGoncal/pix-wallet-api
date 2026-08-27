@@ -29,10 +29,7 @@ function settlementEvent(Payment $payment, string $eventId, array $overrides = [
         ],
     ], $overrides);
 
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $secret = (string) config('acmepay.webhook_secret');
-
-    return [$body, 'sha256='.hash_hmac('sha256', $body, $secret)];
+    return signWebhook($payload);
 }
 
 function deliverWebhook(string $body, string $signature): TestResponse
@@ -138,8 +135,7 @@ it('rejects a settlement event that omits the amount', function () {
         'data' => ['provider_tx_id' => 'pix_tx_no_amount'],
     ];
 
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $signature = 'sha256='.hash_hmac('sha256', $body, (string) config('acmepay.webhook_secret'));
+    [$body, $signature] = signWebhook($payload);
 
     deliverWebhook($body, $signature)
         ->assertStatus(422)
@@ -161,8 +157,7 @@ it('still accepts an expiry event without settlement data', function () {
         'data' => [],
     ];
 
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $signature = 'sha256='.hash_hmac('sha256', $body, (string) config('acmepay.webhook_secret'));
+    [$body, $signature] = signWebhook($payload);
 
     deliverWebhook($body, $signature)->assertOk();
 

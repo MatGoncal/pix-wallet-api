@@ -11,6 +11,7 @@ use App\Http\Middleware\VerifyWebhookSignature;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(AuthenticateApiKey::class)->group(function () {
+    Route::get('/payments', [PaymentController::class, 'index']);
     Route::post('/payments', [PaymentController::class, 'store']);
     Route::get('/payments/{id}', [PaymentController::class, 'show']);
     Route::post('/payments/{id}/splits', [SplitController::class, 'store']);

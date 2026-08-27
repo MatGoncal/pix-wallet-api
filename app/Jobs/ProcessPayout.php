@@ -19,9 +19,10 @@ class ProcessPayout implements ShouldQueue
     ) {}
 
     /**
-     * Exponential backoff in seconds. Retrying is safe at any point: the payout
-     * only leaves `QUEUED` inside the transaction that debits it, so an attempt
-     * that failed moved no money and the next one starts from scratch.
+     * Exponential backoff in seconds. Retrying is safe: the payout only leaves
+     * `QUEUED` inside the transaction that confirms or releases the hold, so an
+     * infrastructure failure rolls back and the next attempt still sees QUEUED
+     * with pending reserved.
      *
      * @return list<int>
      */
@@ -37,8 +38,8 @@ class ProcessPayout implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        // The payout is still QUEUED and the balance untouched, so this is an
-        // operational alert rather than a money problem.
+        // The payout is still QUEUED; available was already moved to pending
+        // on create, so operators must release or retry — see the incident runbook.
         Log::error('Payout processing gave up after exhausting retries', [
             'job' => self::class,
             'payout_id' => $this->payoutId,

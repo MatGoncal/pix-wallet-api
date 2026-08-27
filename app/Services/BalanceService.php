@@ -69,6 +69,140 @@ class BalanceService
     }
 
     /**
+     * Hold funds for a queued payout. No ledger row — the money is still the
+     * platform's until confirmDebit.
+     *
+     * @throws DomainException
+     */
+    public function reserve(string $partnerId, string $currency, int $amount): PartnerBalance
+    {
+        $this->assertPositiveAmount($amount);
+
+        return DB::transaction(function () use ($partnerId, $currency, $amount) {
+            $this->ensureBalanceRow($partnerId, $currency);
+
+            $affected = DB::table('partner_balances')
+                ->where('partner_id', $partnerId)
+                ->where('currency', $currency)
+                ->where('available', '>=', $amount)
+                ->update([
+                    'available' => DB::raw(sprintf('available - %d', $amount)),
+                    'pending' => DB::raw(sprintf('pending + %d', $amount)),
+                    'updated_at' => now(),
+                ]);
+
+            if ($affected === 0) {
+                throw $this->insufficientBalance($partnerId, $currency, $amount, 'available');
+            }
+
+            return $this->currentBalance($partnerId, $currency);
+        });
+    }
+
+    /**
+     * Return a hold to available (payout FAILED). No ledger row.
+     *
+     * @throws DomainException
+     */
+    public function release(string $partnerId, string $currency, int $amount): PartnerBalance
+    {
+        $this->assertPositiveAmount($amount);
+
+        return DB::transaction(function () use ($partnerId, $currency, $amount) {
+            $affected = DB::table('partner_balances')
+                ->where('partner_id', $partnerId)
+                ->where('currency', $currency)
+                ->where('pending', '>=', $amount)
+                ->update([
+                    'pending' => DB::raw(sprintf('pending - %d', $amount)),
+                    'available' => DB::raw(sprintf('available + %d', $amount)),
+                    'updated_at' => now(),
+                ]);
+
+            if ($affected === 0) {
+                throw $this->insufficientBalance($partnerId, $currency, $amount, 'pending');
+            }
+
+            return $this->currentBalance($partnerId, $currency);
+        });
+    }
+
+    /**
+     * Consume a hold and write the ledger debit. Returns null when this
+     * reference was already applied so a job replay does not touch pending.
+     *
+     * @throws DomainException
+     */
+    public function confirmDebit(
+        string $partnerId,
+        string $currency,
+        int $amount,
+        string $referenceType,
+        string $referenceId,
+        string $description,
+    ): ?PartnerBalance {
+        $this->assertPositiveAmount($amount);
+
+        try {
+            return DB::transaction(function () use (
+                $partnerId,
+                $currency,
+                $amount,
+                $referenceType,
+                $referenceId,
+                $description,
+            ) {
+                $this->ensureBalanceRow($partnerId, $currency);
+
+                // Claim the reference before moving pending so a replay hits
+                // the unique index and never decrements twice.
+                BalanceLedgerEntry::query()->create([
+                    'id' => (string) Str::uuid(),
+                    'partner_id' => $partnerId,
+                    'currency' => $currency,
+                    'direction' => LedgerDirectionEnum::Debit,
+                    'amount' => $amount,
+                    'balance_after' => 0,
+                    'reference_type' => $referenceType,
+                    'reference_id' => $referenceId,
+                    'description' => $description,
+                ]);
+
+                $affected = DB::table('partner_balances')
+                    ->where('partner_id', $partnerId)
+                    ->where('currency', $currency)
+                    ->where('pending', '>=', $amount)
+                    ->update([
+                        'pending' => DB::raw(sprintf('pending - %d', $amount)),
+                        'updated_at' => now(),
+                    ]);
+
+                if ($affected === 0) {
+                    throw $this->insufficientBalance($partnerId, $currency, $amount, 'pending');
+                }
+
+                $balance = $this->currentBalance($partnerId, $currency);
+
+                BalanceLedgerEntry::query()
+                    ->where('reference_type', $referenceType)
+                    ->where('reference_id', $referenceId)
+                    ->where('direction', LedgerDirectionEnum::Debit)
+                    ->update([
+                        'balance_after' => $balance->available + $balance->pending,
+                    ]);
+
+                return $balance;
+            });
+        } catch (QueryException $e) {
+            if (! $this->isDuplicateReference($e)) {
+                throw $e;
+            }
+
+            return null;
+        }
+    }
+
+    /**
      * Returns null when the reference had already been applied.
      *
      * @throws DomainException
@@ -188,6 +322,42 @@ class BalanceService
 
             return $balance;
         });
+    }
+
+    private function assertPositiveAmount(int $amount): void
+    {
+        if ($amount <= 0) {
+            throw new DomainException(
+                1015,
+                'settlement_failed',
+                'Amount must be a positive integer in minor units.',
+                ['amount' => $amount],
+            );
+        }
+    }
+
+    /**
+     * @param  'available'|'pending'  $column
+     */
+    private function insufficientBalance(
+        string $partnerId,
+        string $currency,
+        int $amount,
+        string $column,
+    ): DomainException {
+        return new DomainException(
+            1027,
+            'insufficient_balance',
+            'Partner balance is insufficient for this debit.',
+            [
+                'currency' => $currency,
+                $column => (int) DB::table('partner_balances')
+                    ->where('partner_id', $partnerId)
+                    ->where('currency', $currency)
+                    ->value($column),
+                'required' => $amount,
+            ],
+        );
     }
 
     private function ensureBalanceRow(string $partnerId, string $currency): void

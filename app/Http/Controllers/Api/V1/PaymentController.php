@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePaymentRequest;
 use App\Models\Partner;
 use App\Models\Payment;
+use App\Services\IdempotencyService;
 use App\Services\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,16 +15,35 @@ class PaymentController extends Controller
 {
     public function __construct(
         private readonly PaymentService $payments,
+        private readonly IdempotencyService $idempotency,
     ) {}
+
+    public function index(Request $request): JsonResponse
+    {
+        /** @var Partner $partner */
+        $partner = $request->attributes->get('partner');
+
+        $result = $this->payments->listForPartner($partner, $request->query());
+
+        return response()->json([
+            'data' => $result['data']
+                ->map(fn (Payment $payment) => $this->transform($payment))
+                ->values()
+                ->all(),
+            'meta' => $result['meta'],
+        ]);
+    }
 
     public function store(StorePaymentRequest $request): JsonResponse
     {
         /** @var Partner $partner */
         $partner = $request->attributes->get('partner');
 
-        $payment = $this->payments->create($partner, $request->validated());
+        return $this->idempotency->run($request, $partner, function () use ($request, $partner) {
+            $payment = $this->payments->create($partner, $request->validated());
 
-        return response()->json($this->transform($payment), 201);
+            return response()->json($this->transform($payment), 201);
+        });
     }
 
     public function show(Request $request, string $id): JsonResponse

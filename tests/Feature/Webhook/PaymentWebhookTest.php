@@ -20,15 +20,6 @@ function webhookPartner(): Partner
     ]);
 }
 
-function signWebhook(array $payload): array
-{
-    $body = json_encode($payload, JSON_THROW_ON_ERROR);
-    $secret = (string) config('acmepay.webhook_secret');
-    $signature = 'sha256='.hash_hmac('sha256', $body, $secret);
-
-    return [$body, $signature];
-}
-
 it('rejects webhooks with invalid signature', function () {
     $payload = [
         'event_id' => 'evt_1',
@@ -47,7 +38,7 @@ it('rejects webhooks with invalid signature', function () {
         [],
         [
             'CONTENT_TYPE' => 'application/json',
-            'HTTP_X_ACMEPAY_SIGNATURE' => 'sha256=deadbeef',
+            'HTTP_X_ACMEPAY_SIGNATURE' => 't=1,v1='.str_repeat('ab', 32),
         ],
         json_encode($payload, JSON_THROW_ON_ERROR),
     )->assertUnauthorized();
