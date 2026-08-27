@@ -48,4 +48,40 @@ class PaymentService
             ->where('id', $paymentId)
             ->first();
     }
+
+    /**
+     * @param  array<string, mixed>  $query
+     * @return array{data: \Illuminate\Support\Collection<int, Payment>, meta: array{page: int, per_page: int, total: int, total_pages: int}}
+     */
+    public function listForPartner(Partner $partner, array $query): array
+    {
+        $status = isset($query['status']) ? strtoupper((string) $query['status']) : null;
+        $externalId = isset($query['external_id']) ? (string) $query['external_id'] : null;
+        $page = max(1, (int) ($query['page'] ?? 1));
+        $perPage = min(50, max(1, (int) ($query['per_page'] ?? 10)));
+
+        $builder = Payment::query()
+            ->where('partner_id', $partner->id)
+            ->orderByDesc('created_at');
+
+        if ($status) {
+            $builder->where('status', $status);
+        }
+
+        if ($externalId !== null && $externalId !== '') {
+            $builder->where('external_id', 'like', '%'.$externalId.'%');
+        }
+
+        $paginator = $builder->paginate($perPage, ['*'], 'page', $page);
+
+        return [
+            'data' => $paginator->getCollection(),
+            'meta' => [
+                'page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'total_pages' => $paginator->lastPage() ?: 1,
+            ],
+        ];
+    }
 }

@@ -6,7 +6,6 @@ use App\Jobs\ProcessPayout;
 use App\Models\BalanceLedgerEntry;
 use App\Models\Partner;
 use App\Models\PartnerBalance;
-use App\Models\Payout;
 use App\Services\BalanceService;
 use App\Services\PayoutService;
 use Illuminate\Support\Facades\Artisan;
@@ -77,7 +76,13 @@ it('releases a failing payout job for another attempt while retries remain', fun
 it('debits once when the same payout is processed twice', function () {
     $partner = Partner::factory()->create();
     PartnerBalance::factory()->forPartner($partner)->funded(5000)->create();
-    $payout = Payout::factory()->forPartner($partner)->ofAmount(2000)->create();
+
+    $payout = app(PayoutService::class)->create($partner, [
+        'amount' => 2000,
+        'currency' => 'BRL',
+        'destination' => ['type' => 'pix_key', 'value' => 'replay@acme.test'],
+        'external_id' => 'payout-replay-once',
+    ]);
 
     // A worker can pick the same job up twice: after a crash between the debit
     // and the ack, or when a duplicate was enqueued.
@@ -86,5 +91,6 @@ it('debits once when the same payout is processed twice', function () {
 
     expect($payout->refresh()->status)->toBe(PayoutStatusEnum::Completed)
         ->and(PartnerBalance::query()->sole()->available)->toBe(3000)
+        ->and(PartnerBalance::query()->sole()->pending)->toBe(0)
         ->and(BalanceLedgerEntry::query()->where('direction', LedgerDirectionEnum::Debit)->count())->toBe(1);
 });

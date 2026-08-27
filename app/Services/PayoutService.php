@@ -21,16 +21,26 @@ class PayoutService
      */
     public function create(Partner $partner, array $data): Payout
     {
-        $payout = Payout::query()->create([
-            'id' => (string) Str::uuid(),
-            'partner_id' => $partner->id,
-            'status' => PayoutStatusEnum::Queued,
-            'amount' => $data['amount'],
-            'currency' => strtoupper($data['currency']),
-            'destination_type' => $data['destination']['type'],
-            'destination_value' => $data['destination']['value'],
-            'external_id' => $data['external_id'] ?? null,
-        ]);
+        $payout = DB::transaction(function () use ($partner, $data) {
+            $payout = Payout::query()->create([
+                'id' => (string) Str::uuid(),
+                'partner_id' => $partner->id,
+                'status' => PayoutStatusEnum::Queued,
+                'amount' => $data['amount'],
+                'currency' => strtoupper($data['currency']),
+                'destination_type' => $data['destination']['type'],
+                'destination_value' => $data['destination']['value'],
+                'external_id' => $data['external_id'] ?? null,
+            ]);
+
+            $this->balances->reserve(
+                $partner->id,
+                strtoupper($data['currency']),
+                $data['amount'],
+            );
+
+            return $payout;
+        });
 
         ProcessPayout::dispatch($payout->id);
 
@@ -50,7 +60,7 @@ class PayoutService
             $payout->forceFill(['status' => PayoutStatusEnum::Processing])->save();
 
             try {
-                $this->balances->debit(
+                $this->balances->confirmDebit(
                     partnerId: $payout->partner_id,
                     currency: $payout->currency,
                     amount: $payout->amount,
@@ -66,6 +76,16 @@ class PayoutService
                     'failure_message' => null,
                 ])->save();
             } catch (DomainException $e) {
+                try {
+                    $this->balances->release(
+                        $payout->partner_id,
+                        $payout->currency,
+                        $payout->amount,
+                    );
+                } catch (DomainException) {
+                    // pending was already gone; still record the failure.
+                }
+
                 $payout->forceFill([
                     'status' => PayoutStatusEnum::Failed,
                     'failure_code' => (string) $e->errorCode,

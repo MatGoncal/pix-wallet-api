@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AcmePay pix-wallet-api",
-    "description": "Canonical AcmePay v1 collection (Fases 1–4)",
+    "description": "Canonical AcmePay v1 collection (Fases 1–8). Payout create reserves available into pending. Webhook HMAC is t=<unix>,v1=<hex>.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -39,6 +39,7 @@
       "request": {
         "method": "GET",
         "header": [{ "key": "Authorization", "value": "Bearer {{apiKey}}" }],
+        "description": "available + pending (pending is a payout hold in minor units).",
         "url": "{{baseUrl}}/balances"
       }
     },
@@ -65,6 +66,7 @@
           { "key": "Authorization", "value": "Bearer {{apiKey}}" },
           { "key": "Content-Type", "value": "application/json" }
         ],
+        "description": "202 QUEUED. Reserves available into pending; 1027 if available cannot cover. Ledger debit happens on job confirm.",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"amount\": 2500,\n  \"currency\": \"BRL\",\n  \"destination\": { \"type\": \"pix_key\", \"value\": \"synthetic@acme.test\" },\n  \"external_id\": \"payout-77\"\n}"
@@ -93,7 +95,7 @@
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "X-AcmePay-Signature", "value": "sha256=COMPUTE_HMAC_LOCALLY" }
+          { "key": "X-AcmePay-Signature", "value": "t=UNIX,v1=HMAC_HEX" }
         ],
         "body": {
           "mode": "raw",

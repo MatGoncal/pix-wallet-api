@@ -72,7 +72,7 @@ Rate lock rows: `source_*`, `target_*`, `rate` (string), `expires_at`, `consumed
 
 ### `payouts`
 
-Statuses: `QUEUED` | `PROCESSING` | `COMPLETED` | `FAILED`. Debit on confirm.
+Statuses: `QUEUED` | `PROCESSING` | `COMPLETED` | `FAILED`. Reserve `available → pending` on create; ledger debit on confirm.
 
 ### `payment_splits`
 

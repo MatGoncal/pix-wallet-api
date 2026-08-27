@@ -34,7 +34,7 @@ flowchart TB
 | webhooks | `POST /v1/webhooks/payment` (idempotent) |
 | balances | `GET /v1/balances` |
 | fx | `POST /v1/fx/quotes` (5 min rate lock) |
-| payouts | `POST /v1/payouts` (debit on confirm) |
+| payouts | `POST /v1/payouts` (reserve on create, debit on confirm) |
 | splits | `POST /v1/payments/{id}/splits` |
 
 Contract: [`Docs/specs/API_CONTRACT.md`](Docs/specs/API_CONTRACT.md) ·
@@ -65,6 +65,12 @@ Queue worker (webhooks + payouts):
 
 ```bash
 ./vendor/bin/sail artisan queue:work redis
+```
+
+Read-only wallet vs ledger check:
+
+```bash
+./vendor/bin/sail artisan acmepay:reconcile
 ```
 
 ## Quality gates

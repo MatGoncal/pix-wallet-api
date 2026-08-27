@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePayoutRequest;
 use App\Models\Partner;
 use App\Models\Payout;
+use App\Services\IdempotencyService;
 use App\Services\PayoutService;
 use Illuminate\Http\JsonResponse;
 
@@ -13,6 +14,7 @@ class PayoutController extends Controller
 {
     public function __construct(
         private readonly PayoutService $payouts,
+        private readonly IdempotencyService $idempotency,
     ) {}
 
     public function store(StorePayoutRequest $request): JsonResponse
@@ -20,9 +22,11 @@ class PayoutController extends Controller
         /** @var Partner $partner */
         $partner = $request->attributes->get('partner');
 
-        $payout = $this->payouts->create($partner, $request->validated());
+        return $this->idempotency->run($request, $partner, function () use ($request, $partner) {
+            $payout = $this->payouts->create($partner, $request->validated());
 
-        return response()->json($this->transform($payout), 202);
+            return response()->json($this->transform($payout), 202);
+        });
     }
 
     /**

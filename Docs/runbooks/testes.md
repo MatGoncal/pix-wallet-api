@@ -43,6 +43,15 @@ That suite needs `pcntl` and `posix`; it skips itself when they are missing.
 fast-forward, so it proves the retry-until-`failed_jobs` path without sleeping
 through the exponential backoff.
 
+## Reconcile (read-only)
+
+```bash
+./vendor/bin/sail artisan acmepay:reconcile
+```
+
+Exit 0 when `available + pending` matches the ledger net; exit 1 with a
+`ledger_mismatch` line otherwise. See `Docs/runbooks/incidents.md`.
+
 ## Queue worker (webhooks)
 
 ```bash

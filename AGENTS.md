@@ -42,8 +42,8 @@ See `Docs/runbooks/testes.md`.
 | `payments` | Cash-in PIX, QR, status | `Docs/modulos/payments.md` |
 | `webhooks` | Idempotent provider events | `Docs/modulos/webhooks.md` |
 | `fx` | Quotes + rate lock (Fase 3) | `Docs/modulos/fx.md` |
-| `balances` | Multi-currency wallet (Fase 3) | `Docs/modulos/balances.md` |
-| `payouts` | Async payouts (Fase 4) | `Docs/modulos/payouts.md` |
+| `balances` | Multi-currency wallet + payout holds (Fase 3, 7) | `Docs/modulos/balances.md` |
+| `payouts` | Async payouts with pending reserve (Fase 4, 7) | `Docs/modulos/payouts.md` |
 | `splits` | Settlement splits (Fase 4) | `Docs/modulos/splits.md` |
 
 ## Entrypoints
@@ -59,7 +59,8 @@ See `Docs/runbooks/testes.md`.
 | `app/Services/SplitService.php` | Payment splits |
 | `app/Services/FakePixProvider.php` | Synthetic PIX provider |
 | `app/Jobs/ProcessPaymentWebhook.php` | Webhook side effects |
-| `app/Jobs/ProcessPayout.php` | Payout confirm + debit |
+| `app/Jobs/ProcessPayout.php` | Payout confirm + pending debit |
+| `app/Console/Commands/ReconcileBalancesCommand.php` | Read-only `acmepay:reconcile` |
 
 ## Quick lookup
 
@@ -78,6 +79,11 @@ See `Docs/runbooks/testes.md`.
 | Fase 3 balances + FX | `Docs/specs/fase-3-balances-fx.md` |
 | Fase 4 payouts + splits | `Docs/specs/fase-4-payouts-splits.md` |
 | Fase 5 hardening | `Docs/specs/fase-5-hardening.md` |
+| Fase 6 HMAC + Idempotency-Key | `Docs/specs/fase-6-idempotency-hmac.md` |
+| Fase 7 pending payout hold | `Docs/specs/fase-7-pending-payout.md` |
+| Fase 8 reconcile | `Docs/specs/fase-8-reconcile.md` |
+| ADRs | `Docs/adrs/` |
+| Incidents | `Docs/runbooks/incidents.md` |
 | How to test | `Docs/runbooks/testes.md` |
 | Domain glossary | `~/.cursor/skills/payments-domain/SKILL.md` |
 | New Laravel module skill | `.cursor/skills/laravel-payment-module/SKILL.md` |
@@ -107,6 +113,9 @@ See `Docs/runbooks/testes.md`.
 | 3 | Balances + FX quotes | `Docs/specs/fase-3-balances-fx.md` |
 | 4 | Payouts + splits | `Docs/specs/fase-4-payouts-splits.md` |
 | 5 | Hardening (Pest, PHPStan, Pint, CI) | `Docs/specs/fase-5-hardening.md` |
+| 6 | HMAC timestamp + Idempotency-Key | `Docs/specs/fase-6-idempotency-hmac.md` |
+| 7 | Payout pending hold | `Docs/specs/fase-7-pending-payout.md` |
+| 8 | Read-only reconcile | `Docs/specs/fase-8-reconcile.md` |
 
 ## Do NOT
 

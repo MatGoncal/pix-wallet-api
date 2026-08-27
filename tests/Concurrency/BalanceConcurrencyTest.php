@@ -59,72 +59,77 @@ it('lets only one of two simultaneous payouts through when the balance funds one
     $partner = Partner::factory()->create();
     PartnerBalance::factory()->forPartner($partner)->funded(3000)->create();
 
-    $first = Payout::factory()->forPartner($partner)->ofAmount(2500)->create(['external_id' => 'race-a']);
-    $second = Payout::factory()->forPartner($partner)->ofAmount(2500)->create(['external_id' => 'race-b']);
+    $destination = fn (string $id) => [
+        'amount' => 2500,
+        'currency' => 'BRL',
+        'destination' => ['type' => 'pix_key', 'value' => $id.'@acme.test'],
+        'external_id' => $id,
+    ];
 
     $this->runConcurrently([
-        fn () => app(PayoutService::class)->process($first->id),
-        fn () => app(PayoutService::class)->process($second->id),
+        fn () => app(PayoutService::class)->create($partner, $destination('race-a')),
+        fn () => app(PayoutService::class)->create($partner, $destination('race-b')),
     ]);
-
-    $statuses = Payout::query()->pluck('status');
-
-    expect($statuses->filter(fn ($status) => $status === PayoutStatusEnum::Completed))->toHaveCount(1)
-        ->and($statuses->filter(fn ($status) => $status === PayoutStatusEnum::Failed))->toHaveCount(1)
-        ->and(Payout::query()->where('failure_code', '1027')->count())->toBe(1);
 
     $balance = PartnerBalance::query()->sole();
 
-    expect($balance->available)->toBe(500)
-        ->and(BalanceLedgerEntry::query()->where('direction', LedgerDirectionEnum::Debit)->count())->toBe(1);
+    expect(Payout::query()->count())->toBe(1)
+        ->and($balance->available + $balance->pending)->toBe(3000)
+        ->and($balance->pending)->toBe(2500)
+        ->and($balance->available)->toBe(500)
+        ->and(BalanceLedgerEntry::query()->where('direction', LedgerDirectionEnum::Debit)->count())->toBe(0);
 });
 
 it('never overdraws when many payouts race for the same balance', function () {
     $partner = Partner::factory()->create();
     PartnerBalance::factory()->forPartner($partner)->funded(3000)->create();
 
-    // Eight payouts of 1000 against 3000 of funding: at most three can win.
-    $payouts = collect(range(1, 8))->map(
-        fn (int $index) => Payout::factory()
-            ->forPartner($partner)
-            ->ofAmount(1000)
-            ->create(['external_id' => 'race-'.$index]),
+    $this->runConcurrently(
+        collect(range(1, 8))->map(
+            fn (int $index) => fn () => app(PayoutService::class)->create($partner, [
+                'amount' => 1000,
+                'currency' => 'BRL',
+                'destination' => ['type' => 'pix_key', 'value' => 'race-'.$index.'@acme.test'],
+                'external_id' => 'race-'.$index,
+            ]),
+        )->all(),
     );
 
-    $this->runConcurrently(
-        $payouts->map(
-            fn (Payout $payout) => fn () => app(PayoutService::class)->process($payout->id),
-        )->all(),
+    expect(Payout::query()->count())->toBe(3);
+
+    Payout::query()->each(
+        fn (Payout $payout) => app(PayoutService::class)->process($payout->id),
     );
 
     $balance = PartnerBalance::query()->sole();
     $debits = BalanceLedgerEntry::query()->where('direction', LedgerDirectionEnum::Debit)->get();
 
     expect($balance->available)->toBe(0)
+        ->and($balance->pending)->toBe(0)
         ->and($balance->available)->toBeGreaterThanOrEqual(0)
         ->and(Payout::query()->where('status', PayoutStatusEnum::Completed)->count())->toBe(3)
-        ->and(Payout::query()->where('status', PayoutStatusEnum::Failed)->count())->toBe(5)
         ->and($debits)->toHaveCount(3)
         ->and($debits->pluck('balance_after')->sort()->values()->all())->toBe([0, 1000, 2000]);
 });
 
-it('keeps the ledger consistent when credits and debits interleave', function () {
+it('keeps the ledger consistent when credits and payouts interleave', function () {
     $partner = Partner::factory()->create();
     PartnerBalance::factory()->forPartner($partner)->funded(5000)->create();
-
-    $payouts = collect(range(1, 5))->map(
-        fn (int $index) => Payout::factory()
-            ->forPartner($partner)
-            ->ofAmount(600)
-            ->create(['external_id' => 'mixed-'.$index]),
-    );
 
     $payments = collect(range(1, 5))->map(
         fn () => Payment::factory()->forPartner($partner)->ofAmount(400)->create(),
     );
 
-    $tasks = $payouts
-        ->map(fn (Payout $payout) => fn () => app(PayoutService::class)->process($payout->id))
+    $tasks = collect(range(1, 5))
+        ->map(fn (int $index) => fn () => tap(
+            app(PayoutService::class)->create($partner, [
+                'amount' => 600,
+                'currency' => 'BRL',
+                'destination' => ['type' => 'pix_key', 'value' => 'mixed-'.$index.'@acme.test'],
+                'external_id' => 'mixed-'.$index,
+            ]),
+            fn (Payout $payout) => app(PayoutService::class)->process($payout->id),
+        ))
         ->merge($payments->map(
             fn (Payment $payment) => fn () => app(BalanceService::class)->creditPayment($payment),
         ))
@@ -135,13 +140,11 @@ it('keeps the ledger consistent when credits and debits interleave', function ()
     $balance = PartnerBalance::query()->sole();
     $entries = BalanceLedgerEntry::query()->get();
 
-    // Every entry that exists must have moved money exactly once, so the final
-    // balance is the funding plus the credits minus the debits — no lost update.
     $credited = (int) $entries->where('direction', LedgerDirectionEnum::Credit)->sum('amount');
     $debited = (int) $entries->where('direction', LedgerDirectionEnum::Debit)->sum('amount');
 
     expect($entries)->toHaveCount(10)
         ->and($credited)->toBe(2000)
         ->and($debited)->toBe(3000)
-        ->and($balance->available)->toBe(5000 + $credited - $debited);
+        ->and($balance->available + $balance->pending)->toBe(5000 + $credited - $debited);
 });
