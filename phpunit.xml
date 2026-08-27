@@ -40,6 +40,9 @@
         <env name="REDIS_DB" value="15"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="WEBHOOK_SECRET" value="dev-webhook-secret"/>
+        <env name="FAKE_PIX_BASE_URL" value="http://host.docker.internal:8080"/>
+        <env name="FAKE_PIX_API_KEY" value="fake-pix-demo"/>
+        <env name="FAKE_PIX_CALLBACK_URL" value="http://localhost/v1/webhooks/payment"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

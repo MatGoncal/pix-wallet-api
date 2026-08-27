@@ -8,7 +8,8 @@ contract consumed by `partner-dashboard-vue`.
 
 - Demonstrate production-shaped payment engineering: idempotent webhooks,
   integer money, partner API keys, async jobs.
-- Stay demoable locally with Sail (Postgres + Redis) and `FakePixProvider`.
+- Stay demoable locally with Sail (Postgres + Redis) and `FakePixProvider`
+  (HTTP client of `fake-pix-provider`).
 - Keep specs in git (`Docs/`) so the method is visible in interviews.
 
 ## Non-goals

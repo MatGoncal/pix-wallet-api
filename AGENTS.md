@@ -57,7 +57,7 @@ See `Docs/runbooks/testes.md`.
 | `app/Services/FxService.php` | FX quotes |
 | `app/Services/PayoutService.php` | Async payouts |
 | `app/Services/SplitService.php` | Payment splits |
-| `app/Services/FakePixProvider.php` | Synthetic PIX provider |
+| `app/Services/FakePixProvider.php` | HTTP client of `fake-pix-provider` (not a real PSP) |
 | `app/Jobs/ProcessPaymentWebhook.php` | Webhook side effects |
 | `app/Jobs/ProcessPayout.php` | Payout confirm + pending debit |
 | `app/Console/Commands/ReconcileBalancesCommand.php` | Read-only `acmepay:reconcile` |
@@ -82,6 +82,7 @@ See `Docs/runbooks/testes.md`.
 | Fase 6 HMAC + Idempotency-Key | `Docs/specs/fase-6-idempotency-hmac.md` |
 | Fase 7 pending payout hold | `Docs/specs/fase-7-pending-payout.md` |
 | Fase 8 reconcile | `Docs/specs/fase-8-reconcile.md` |
+| Fase 9 FakePix HTTP | `Docs/specs/fase-9-fake-pix-http.md` |
 | ADRs | `Docs/adrs/` |
 | Incidents | `Docs/runbooks/incidents.md` |
 | How to test | `Docs/runbooks/testes.md` |
@@ -116,11 +117,12 @@ See `Docs/runbooks/testes.md`.
 | 6 | HMAC timestamp + Idempotency-Key | `Docs/specs/fase-6-idempotency-hmac.md` |
 | 7 | Payout pending hold | `Docs/specs/fase-7-pending-payout.md` |
 | 8 | Read-only reconcile | `Docs/specs/fase-8-reconcile.md` |
+| 9 | FakePixProvider HTTP client of `fake-pix-provider` | `Docs/specs/fase-9-fake-pix-http.md` |
 
 ## Do NOT
 
 - Use `float`/`double` for money — integer minor units only
-- Call a real PSP — only `FakePixProvider`
+- Call a real PSP — `FakePixProvider` is an HTTP client of `fake-pix-provider` only
 - Copy StarsPay production code or secrets
 - Run tests or Artisan on host PHP
 - Write code before the phase spec exists
