@@ -123,6 +123,21 @@ it('posts integer amount payment_id and callback_url to fake pix provider', func
         ->and($data['payment_id'])->toBe($paymentId);
 });
 
+it('rejects non-BRL currency with 422 and does not call the PIX provider', function () {
+    demoPartner();
+
+    $this->postJson('/v1/payments', [
+        'amount' => 1500,
+        'currency' => 'USD',
+    ], [
+        'Authorization' => 'Bearer test_partner_api_key',
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['currency']);
+
+    expect(Payment::query()->count())->toBe(0)
+        ->and(Http::recorded())->toBeEmpty();
+});
+
 it('returns 502 when fake pix provider is unreachable', function () {
     Http::fake(function () {
         throw new ConnectionException('Connection refused');
