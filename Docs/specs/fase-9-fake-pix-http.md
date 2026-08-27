@@ -46,8 +46,12 @@ Outbound body (integer minor units):
 `FakePixProvider` still returns `{ qr_code, copy_paste, provider: "fake_pix" }`
 to `PaymentService`. Partner 201 shape is unchanged.
 
-Go down / connection refused / non-201 (including Go 400 for `currency ≠ BRL`)
-→ HTTP **502**:
+Partner `currency` other than `BRL` is rejected **on this API** before any Go
+call. Laravel `StorePaymentRequest` returns HTTP **422** (FormRequest body).
+Do **not** invent a 10xx code. Go 400 `invalid_currency` still maps to 502
+only as a safety net if a request bypasses API validation.
+
+Go down / connection refused / timeout / non-201 → HTTP **502**:
 
 ```json
 {
@@ -60,23 +64,30 @@ Go down / connection refused / non-201 (including Go 400 for `currency ≠ BRL`)
 }
 ```
 
+On 502, `FakePixProvider` logs a short warning (HTTP status + ~200-char body
+snippet, or connection/timeout class such as `connection refused` / `timeout`).
+Do not log a giant body or PII. The JSON 502 envelope above does not change.
+
 ## Fluxo (passo a passo)
 
-1. `PaymentService` generates the payment UUID **before** calling the provider.
-2. `FakePixProvider` `Http::timeout(5)` POSTs `/v1/charges` with `amount`,
+1. `StorePaymentRequest` rejects `currency ≠ BRL` with HTTP 422. No payments
+   row; Go is not called.
+2. `PaymentService` generates the payment UUID **before** calling the provider.
+3. `FakePixProvider` `Http::timeout(5)` POSTs `/v1/charges` with `amount`,
    `currency`, `payment_id`, `callback_url`.
-3. On 201, persist `PENDING` with QR from the Go body. Do not store charge id
+4. On 201, persist `PENDING` with QR from the Go body. Do not store charge id
    or `provider_tx_id`.
-4. Partner receives 201. Demo: `GET` Go `by-payment` → `POST .../simulate`.
-5. Go POSTs HMAC `t,v1` to `callback_url`. Existing job marks `PAID`.
-6. This API never fires `paid` by itself. Next `POST /api/simulator/fire`
+5. Partner receives 201. Demo: `GET` Go `by-payment` → `POST .../simulate`.
+6. Go POSTs HMAC `t,v1` to `callback_url`. Existing job marks `PAID`.
+7. This API never fires `paid` by itself. Next `POST /api/simulator/fire`
    remains a parallel path.
 
 ## Códigos de erro
 
 | Código | Situação |
 |--------|----------|
-| HTTP 502 (`bad_gateway`) | Go unreachable, timeout, or non-201 (no new domain code; not `1015`) |
+| HTTP 422 (FormRequest) | `currency` is not `BRL` (rejected on the API; Go is not called; no 10xx) |
+| HTTP 502 (`bad_gateway`) | Go unreachable, timeout, or non-201 (safety net includes Go 400; no new domain code; not `1015`) |
 
 ## Critérios de aceite
 
@@ -87,12 +98,15 @@ Go down / connection refused / non-201 (including Go 400 for `currency ≠ BRL`)
 - [x] Go down / connection refused → HTTP 502, no `1015`
 - [x] CI does not start Go: `Http::fake()` supplies a synthetic 201
 - [x] Dedicated Pest: fake 201 with `00020126ACMEPAY.FAKE.PIX` + assert POST URL, `payment_id`, `callback_url`, integer `amount`
+- [x] `POST /v1/payments` with `currency` other than `BRL` → HTTP 422; zero payments rows; no POST to Go
+- [x] On 502, provider logs HTTP status or error class (short; no giant body). Log text is not asserted in tests.
 
 ## Testes obrigatórios
 
 - [x] `Http::fake()` in `TestCase` so create + idempotency + create concurrency stay green
 - [x] Dedicated — fake 201 QR prefix + assert outbound POST (URL, `payment_id`, `callback_url`, integer amount)
 - [x] Dedicated — connection refused → 502
+- [x] Dedicated — `USD` → 422, zero payments rows, `Http::recorded()` empty
 
 ## Migrations
 
