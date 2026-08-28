@@ -31,7 +31,7 @@ function fakePixChargeSequence(array $body, int $firstStatus, int $secondStatus)
 {
     $factory = new Factory;
     $factory->fake([
-        'http://host.docker.internal:8080/v1/charges' => Http::sequence()
+        config('acmepay.fake_pix_base_url').'/v1/charges' => Http::sequence()
             ->push($body, $firstStatus)
             ->push($body, $secondStatus),
     ]);
@@ -45,7 +45,7 @@ function fakePixChargeResponse(array $body, int $status): void
 {
     $factory = new Factory;
     $factory->fake([
-        'http://host.docker.internal:8080/v1/charges' => Http::response($body, $status),
+        config('acmepay.fake_pix_base_url').'/v1/charges' => Http::response($body, $status),
     ]);
     Http::swap($factory);
 }

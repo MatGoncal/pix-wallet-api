@@ -12,6 +12,8 @@ cp .env.example .env   # if needed
 ./vendor/bin/sail artisan db:seed
 ```
 
+`sail up -d` starts Postgres, Redis, the API, and **fake-pix** (no `go run`).
+
 ## Tests
 
 ```bash

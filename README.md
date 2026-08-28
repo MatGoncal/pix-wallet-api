@@ -68,17 +68,11 @@ curl -s -X POST http://localhost/v1/payments \
 
 ### Demo PIX with fake-pix-provider
 
-QR comes from Go on the **host** (`go run`, `:8080`). Sail reaches it via
-`http://host.docker.internal:8080`. Keep `sail artisan queue:work` running so
+QR comes from the `fake-pix` container (`sail up -d`, published `:8080`). Sail
+reaches it at `http://fake-pix:8080`. Keep `sail artisan queue:work` running so
 the signed webhook from `simulate` can mark the payment `PAID`.
 
-```bash
-# In portfolio/fake-pix-provider
-export WEBHOOK_SECRET=dev-webhook-secret
-export FAKE_PIX_API_KEY=fake-pix-demo
-export PORT=8080
-go run ./cmd/provider
-```
+No `go run` on the host. Smoke 502 = stop the PSP container, not kill a local process.
 
 ```bash
 # Create (copy `id` from the 201)
@@ -107,14 +101,16 @@ Without the header, create stays non-idempotent (new UUID). USD is still
 not required to prove Go → API.
 
 ```bash
-# 1. Go down → 502; key is retained
+# 1. Stop the PSP → 502; key is retained
+./vendor/bin/sail stop fake-pix
 curl -s -X POST http://localhost/v1/payments \
   -H "Authorization: Bearer acmepay_demo_key_change_me" \
   -H "Idempotency-Key: demo-retry-1" \
   -H "Content-Type: application/json" \
   -d '{"amount":1500,"currency":"BRL","external_id":"demo-retry-1"}'
 
-# 2. Start Go, then retry the same key → 201 (same payment id)
+# 2. Start the PSP, then retry the same key → 201 (same payment id)
+./vendor/bin/sail start fake-pix
 curl -s -X POST http://localhost/v1/payments \
   -H "Authorization: Bearer acmepay_demo_key_change_me" \
   -H "Idempotency-Key: demo-retry-1" \
