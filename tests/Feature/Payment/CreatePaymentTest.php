@@ -28,7 +28,7 @@ function fakePixProviderResponse(array $body, int $status): void
 {
     $factory = new Factory;
     $factory->fake([
-        'http://host.docker.internal:8080/v1/charges' => Http::response($body, $status),
+        config('acmepay.fake_pix_base_url').'/v1/charges' => Http::response($body, $status),
     ]);
     Http::swap($factory);
 }
@@ -135,12 +135,12 @@ it('posts integer amount payment_id and callback_url to fake pix provider', func
     $outbound = $recorded[0][0];
     $data = $outbound->data();
 
-    expect($outbound->url())->toBe('http://host.docker.internal:8080/v1/charges')
+    expect($outbound->url())->toBe(config('acmepay.fake_pix_base_url').'/v1/charges')
         ->and($outbound->method())->toBe('POST')
         ->and($data['amount'])->toBe(1500)
         ->and($data['amount'])->toBeInt()
         ->and($data['currency'])->toBe('BRL')
-        ->and($data['callback_url'])->toBe('http://localhost/v1/webhooks/payment')
+        ->and($data['callback_url'])->toBe(config('acmepay.fake_pix_callback_url'))
         ->and($data['payment_id'])->toBe($paymentId);
 });
 
