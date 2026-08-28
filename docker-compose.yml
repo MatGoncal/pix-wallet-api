@@ -28,6 +28,25 @@ services:
                 condition: service_healthy
             fake-pix:
                 condition: service_healthy
+    fake-pix-db:
+        image: 'postgres:18-alpine'
+        ports:
+            - '${FORWARD_FAKE_PIX_DB_PORT:-5435}:5432'
+        environment:
+            POSTGRES_DB: fake_pix
+            POSTGRES_USER: fake_pix
+            POSTGRES_PASSWORD: fake_pix
+        volumes:
+            - 'sail-fake-pix-pg:/var/lib/postgresql'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD-SHELL
+                - 'pg_isready -U fake_pix -d fake_pix'
+            interval: 5s
+            timeout: 3s
+            retries: 5
     fake-pix:
         build:
             context: ../fake-pix-provider
@@ -39,8 +58,12 @@ services:
             PORT: 8080
             WEBHOOK_SECRET: '${WEBHOOK_SECRET:-dev-webhook-secret}'
             FAKE_PIX_API_KEY: '${FAKE_PIX_API_KEY:-fake-pix-demo}'
+            DATABASE_URL: postgres://fake_pix:fake_pix@fake-pix-db:5432/fake_pix?sslmode=disable
         networks:
             - sail
+        depends_on:
+            fake-pix-db:
+                condition: service_healthy
         healthcheck:
             test:
                 - CMD
@@ -98,4 +121,6 @@ volumes:
     sail-pgsql:
         driver: local
     sail-redis:
+        driver: local
+    sail-fake-pix-pg:
         driver: local
