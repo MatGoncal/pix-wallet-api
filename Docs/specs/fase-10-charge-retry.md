@@ -121,6 +121,6 @@ None. Reuse fase 9 `FAKE_PIX_*`.
 
 ## Dependências / Rollback
 
-- Dependências: `fake-pix-provider` fase 2 (`CreateOrGet` by `payment_id`; 200 replay / 201 create). Pest uses `Http::fake()`.
+- Dependências: `fake-pix-provider` fase 2 (`CreateOrGet` by `payment_id`; 200 replay / 201 create). Demo/Docker: `fake-pix-provider` fase 4 (Postgres + outbox; restart does not drop charges). Pest uses `Http::fake()`.
 - Rollback: drop `provider_charge_id` / `resource_id`; restore FakePix 201-only and key-delete-on-throw.
 - Out of scope: outbox, Docker of Go, unified compose, EMV fallback, exposing charge id on the partner JSON, making create without header idempotent.
