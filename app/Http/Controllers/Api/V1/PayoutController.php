@@ -22,7 +22,7 @@ class PayoutController extends Controller
         /** @var Partner $partner */
         $partner = $request->attributes->get('partner');
 
-        return $this->idempotency->run($request, $partner, function () use ($request, $partner) {
+        return $this->idempotency->run($request, $partner, function (?string $resourceId) use ($request, $partner) {
             $payout = $this->payouts->create($partner, $request->validated());
 
             return response()->json($this->transform($payout), 202);

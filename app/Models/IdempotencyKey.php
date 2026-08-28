@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $partner_id
  * @property string $key
+ * @property string|null $resource_id
  * @property string $request_hash
  * @property int|null $response_code
  * @property array<string, mixed>|null $response_body
@@ -22,6 +23,7 @@ class IdempotencyKey extends Model
     protected $fillable = [
         'partner_id',
         'key',
+        'resource_id',
         'method',
         'path',
         'request_hash',

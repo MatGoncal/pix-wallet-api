@@ -83,6 +83,7 @@ See `Docs/runbooks/testes.md`.
 | Fase 7 pending payout hold | `Docs/specs/fase-7-pending-payout.md` |
 | Fase 8 reconcile | `Docs/specs/fase-8-reconcile.md` |
 | Fase 9 FakePix HTTP | `Docs/specs/fase-9-fake-pix-http.md` |
+| Fase 10 charge retry | `Docs/specs/fase-10-charge-retry.md` |
 | ADRs | `Docs/adrs/` |
 | Incidents | `Docs/runbooks/incidents.md` |
 | How to test | `Docs/runbooks/testes.md` |
@@ -118,6 +119,7 @@ See `Docs/runbooks/testes.md`.
 | 7 | Payout pending hold | `Docs/specs/fase-7-pending-payout.md` |
 | 8 | Read-only reconcile | `Docs/specs/fase-8-reconcile.md` |
 | 9 | FakePixProvider HTTP client of `fake-pix-provider` | `Docs/specs/fase-9-fake-pix-http.md` |
+| 10 | Charge id + retry-safe payment create | `Docs/specs/fase-10-charge-retry.md` |
 
 ## Do NOT
 

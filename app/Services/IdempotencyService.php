@@ -11,6 +11,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 class IdempotencyService
@@ -20,13 +21,17 @@ class IdempotencyService
     private const WAIT_INTERVAL_MICROSECONDS = 50_000;
 
     /**
-     * @param  Closure(): JsonResponse  $execute
+     * @param  Closure(string|null): JsonResponse  $execute
      */
-    public function run(Request $request, Partner $partner, Closure $execute): JsonResponse
-    {
+    public function run(
+        Request $request,
+        Partner $partner,
+        Closure $execute,
+        bool $retainResource = false,
+    ): JsonResponse {
         $key = $request->header('Idempotency-Key');
         if (! is_string($key) || $key === '') {
-            return $execute();
+            return $execute(null);
         }
 
         return $this->runKeyed(
@@ -36,11 +41,12 @@ class IdempotencyService
             $request->path(),
             $request->getContent(),
             $execute,
+            $retainResource,
         );
     }
 
     /**
-     * @param  Closure(): JsonResponse  $execute
+     * @param  Closure(string|null): JsonResponse  $execute
      */
     public function runKeyed(
         Partner $partner,
@@ -49,14 +55,17 @@ class IdempotencyService
         string $path,
         string $rawBody,
         Closure $execute,
+        bool $retainResource = false,
     ): JsonResponse {
         $requestHash = hash('sha256', $rawBody);
+        $resourceId = $retainResource ? (string) Str::uuid() : null;
 
         try {
-            $row = DB::transaction(function () use ($partner, $key, $method, $path, $requestHash) {
+            $row = DB::transaction(function () use ($partner, $key, $method, $path, $requestHash, $resourceId) {
                 return IdempotencyKey::query()->create([
                     'partner_id' => $partner->id,
                     'key' => $key,
+                    'resource_id' => $resourceId,
                     'method' => $method,
                     'path' => $path,
                     'request_hash' => $requestHash,
@@ -64,19 +73,32 @@ class IdempotencyService
                 ]);
             });
         } catch (UniqueConstraintViolationException) {
-            return $this->waitForSnapshot($partner->id, $key, $requestHash);
+            return $this->onExistingKey($partner->id, $key, $requestHash, $execute, $retainResource);
         } catch (QueryException $e) {
             if (($e->errorInfo[0] ?? null) === '23505') {
-                return $this->waitForSnapshot($partner->id, $key, $requestHash);
+                return $this->onExistingKey($partner->id, $key, $requestHash, $execute, $retainResource);
             }
 
             throw $e;
         }
 
+        return $this->executeAndPersist($row, $execute, $retainResource);
+    }
+
+    /**
+     * @param  Closure(string|null): JsonResponse  $execute
+     */
+    private function executeAndPersist(
+        IdempotencyKey $row,
+        Closure $execute,
+        bool $retainResource,
+    ): JsonResponse {
         try {
-            $response = $execute();
+            $response = $execute($row->resource_id);
         } catch (Throwable $e) {
-            $row->delete();
+            if (! $retainResource) {
+                $row->delete();
+            }
 
             throw $e;
         }
@@ -87,6 +109,44 @@ class IdempotencyService
         ]);
 
         return $response;
+    }
+
+    /**
+     * @param  Closure(string|null): JsonResponse  $execute
+     */
+    private function onExistingKey(
+        string $partnerId,
+        string $key,
+        string $requestHash,
+        Closure $execute,
+        bool $retainResource,
+    ): JsonResponse {
+        $existing = IdempotencyKey::query()
+            ->where('partner_id', $partnerId)
+            ->where('key', $key)
+            ->first();
+
+        if ($existing !== null) {
+            if ($existing->request_hash !== $requestHash) {
+                throw new DomainException(
+                    1043,
+                    'idempotency_conflict',
+                    'Idempotency-Key was reused with a different request body.',
+                    ['key' => $key],
+                    409,
+                );
+            }
+
+            if ($existing->response_code !== null && $existing->response_body !== null) {
+                return response()->json($existing->response_body, $existing->response_code);
+            }
+
+            if ($retainResource && is_string($existing->resource_id) && $existing->resource_id !== '') {
+                return $this->executeAndPersist($existing, $execute, $retainResource);
+            }
+        }
+
+        return $this->waitForSnapshot($partnerId, $key, $requestHash);
     }
 
     private function waitForSnapshot(string $partnerId, string $key, string $requestHash): JsonResponse
