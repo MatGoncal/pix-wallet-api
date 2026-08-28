@@ -122,6 +122,9 @@ None. Charge id is not stored.
 
 Sail `extra_hosts` already maps `host.docker.internal`.
 
+Compose URLs (container DNS, callback `laravel.test`) are fase 11:
+`Docs/specs/fase-11-fake-pix-compose.md`.
+
 ## Dependências / Rollback
 
 - Dependências: `fake-pix-provider` on the host for local demo; Pest uses `Http::fake()`.
