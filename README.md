@@ -118,6 +118,18 @@ curl -s -X POST http://localhost/v1/payments \
   -d '{"amount":1500,"currency":"BRL","external_id":"demo-retry-1"}'
 ```
 
+Restart the PSP **after create, before simulate** — `GET by-payment` still
+finds the charge (Postgres). Restart **after simulate** before the webhook
+lands — the outbox poller re-sends; the wallet inbox stays unique on
+`(provider, event_id)` so the payment is `PAID` once.
+
+```bash
+# Charge survives a PSP restart (copy payment_id from the 201)
+./vendor/bin/sail restart fake-pix
+curl -s http://localhost:8080/v1/charges/by-payment/<payment_id> \
+  -H "Authorization: Bearer fake-pix-demo"
+```
+
 Queue worker (webhooks + payouts):
 
 ```bash
