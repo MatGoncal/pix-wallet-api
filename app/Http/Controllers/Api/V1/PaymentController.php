@@ -39,11 +39,16 @@ class PaymentController extends Controller
         /** @var Partner $partner */
         $partner = $request->attributes->get('partner');
 
-        return $this->idempotency->run($request, $partner, function () use ($request, $partner) {
-            $payment = $this->payments->create($partner, $request->validated());
+        return $this->idempotency->run(
+            $request,
+            $partner,
+            function (?string $resourceId) use ($request, $partner) {
+                $payment = $this->payments->create($partner, $request->validated(), $resourceId);
 
-            return response()->json($this->transform($payment), 201);
-        });
+                return response()->json($this->transform($payment), 201);
+            },
+            retainResource: true,
+        );
     }
 
     public function show(Request $request, string $id): JsonResponse

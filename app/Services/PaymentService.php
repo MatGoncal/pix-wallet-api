@@ -5,8 +5,11 @@ namespace App\Services;
 use App\Enums\PaymentStatusEnum;
 use App\Models\Partner;
 use App\Models\Payment;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Throwable;
 
 class PaymentService
 {
@@ -17,9 +20,9 @@ class PaymentService
     /**
      * @param  array{amount: int, currency: string, external_id?: string|null, description?: string|null, expires_in_seconds?: int|null}  $data
      */
-    public function create(Partner $partner, array $data): Payment
+    public function create(Partner $partner, array $data, ?string $resourceId = null): Payment
     {
-        $paymentId = (string) Str::uuid();
+        $paymentId = $this->resolvePaymentId($resourceId);
         $expiresIn = $data['expires_in_seconds'] ?? 1800;
         $charge = $this->pixProvider->createCharge(
             $data['amount'],
@@ -39,11 +42,42 @@ class PaymentService
             'qr_code' => $charge['qr_code'],
             'copy_paste' => $charge['copy_paste'],
             'provider' => $charge['provider'],
+            'provider_charge_id' => $charge['id'],
             'expires_at' => now()->addSeconds($expiresIn),
         ]);
-        $payment->save();
+
+        try {
+            $payment->save();
+        } catch (UniqueConstraintViolationException $e) {
+            return $this->existingPaymentOrThrow($paymentId, $e);
+        } catch (QueryException $e) {
+            if (($e->errorInfo[0] ?? null) === '23505') {
+                return $this->existingPaymentOrThrow($paymentId, $e);
+            }
+
+            throw $e;
+        }
 
         return $payment;
+    }
+
+    private function resolvePaymentId(?string $resourceId): string
+    {
+        if (is_string($resourceId) && $resourceId !== '') {
+            return $resourceId;
+        }
+
+        return (string) Str::uuid();
+    }
+
+    private function existingPaymentOrThrow(string $paymentId, Throwable $e): Payment
+    {
+        $existing = Payment::query()->find($paymentId);
+        if ($existing instanceof Payment) {
+            return $existing;
+        }
+
+        throw $e;
     }
 
     public function findForPartner(Partner $partner, string $paymentId): ?Payment

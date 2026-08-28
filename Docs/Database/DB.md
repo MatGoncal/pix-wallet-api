@@ -29,7 +29,8 @@ Amounts are **bigint minor units**. Never float.
 | qr_code | text | |
 | copy_paste | text | |
 | provider | string | `fake_pix` |
-| provider_tx_id | string nullable | |
+| provider_charge_id | string nullable | Go charge `id` from `POST /v1/charges`; not exposed on partner JSON |
+| provider_tx_id | string nullable | Settlement id from webhook `payment.paid` (`pix_tx_*`); null on create |
 | expires_at | timestamptz | |
 | paid_at | timestamptz nullable | |
 | created_at / updated_at | timestamps | |
@@ -77,3 +78,17 @@ Statuses: `QUEUED` | `PROCESSING` | `COMPLETED` | `FAILED`. Reserve `available â
 ### `payment_splits`
 
 Unique `(payment_id, party)`. Parties: `platform`, `seller`, `affiliate`.
+
+### `idempotency_keys`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid PK | |
+| partner_id | uuid FK â†’ partners | Unique with `key` |
+| key | string(255) | Partner `Idempotency-Key` header |
+| resource_id | uuid nullable | Stable payment UUID for retry-safe create; **no FK**. Null for payouts |
+| request_hash | string(64) | SHA-256 of the raw body |
+| response_code / response_body | int / jsonb nullable | Snapshot after a completed create |
+| expires_at | timestamptz | now+24h |
+
+**Unique:** `(partner_id, key)`. Payment create retains the row on throw and resumes `execute` with `resource_id`. Payouts still delete the row on throw.

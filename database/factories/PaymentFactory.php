@@ -32,6 +32,7 @@ class PaymentFactory extends Factory
             'qr_code' => $payload,
             'copy_paste' => $payload,
             'provider' => 'fake_pix',
+            'provider_charge_id' => null,
             'provider_tx_id' => null,
             'expires_at' => now()->addHour(),
             'paid_at' => null,

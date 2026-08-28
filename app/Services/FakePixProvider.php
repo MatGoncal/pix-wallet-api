@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 class FakePixProvider
 {
     /**
-     * @return array{qr_code: string, copy_paste: string, provider: string}
+     * @return array{id: string, qr_code: string, copy_paste: string, provider: string}
      */
     public function createCharge(int $amountMinor, string $currency, string $paymentId): array
     {
@@ -37,24 +37,38 @@ class FakePixProvider
             $this->failGateway();
         }
 
-        if ($response->status() !== Response::HTTP_CREATED) {
+        if (! $this->isChargeSuccess($response)) {
             $this->logHttpFailure($response);
             $this->failGateway();
         }
 
+        $id = $response->json('id');
         $qrCode = $response->json('qr_code');
         $copyPaste = $response->json('copy_paste');
 
-        if (! is_string($qrCode) || $qrCode === '' || ! is_string($copyPaste) || $copyPaste === '') {
+        if (
+            ! is_string($id) || $id === ''
+            || ! is_string($qrCode) || $qrCode === ''
+            || ! is_string($copyPaste) || $copyPaste === ''
+        ) {
             $this->logHttpFailure($response);
             $this->failGateway();
         }
 
         return [
+            'id' => $id,
             'qr_code' => $qrCode,
             'copy_paste' => $copyPaste,
             'provider' => 'fake_pix',
         ];
+    }
+
+    private function isChargeSuccess(ClientResponse $response): bool
+    {
+        return in_array($response->status(), [
+            Response::HTTP_OK,
+            Response::HTTP_CREATED,
+        ], true);
     }
 
     private function connectionReason(ConnectionException $exception): string

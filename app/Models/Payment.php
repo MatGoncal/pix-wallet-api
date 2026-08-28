@@ -33,6 +33,7 @@ class Payment extends Model
         'qr_code',
         'copy_paste',
         'provider',
+        'provider_charge_id',
         'provider_tx_id',
         'expires_at',
         'paid_at',

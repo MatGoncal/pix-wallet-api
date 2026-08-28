@@ -20,11 +20,11 @@ it('creates only one payment when two requests race with the same key', function
             'POST',
             'v1/payments',
             $body,
-            function () use ($partner) {
+            function (?string $resourceId) use ($partner) {
                 $payment = app(PaymentService::class)->create($partner, [
                     'amount' => 1500,
                     'currency' => 'BRL',
-                ]);
+                ], $resourceId);
 
                 return response()->json([
                     'id' => $payment->id,
@@ -33,6 +33,7 @@ it('creates only one payment when two requests race with the same key', function
                     'currency' => $payment->currency,
                 ], 201);
             },
+            retainResource: true,
         );
     };
 
