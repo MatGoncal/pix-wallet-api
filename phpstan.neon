@@ -1,6 +1,8 @@
 includes:
     - vendor/larastan/larastan/extension.neon
     - vendor/nesbot/carbon/extension.neon
+    # 0 erros no baseline (medir 2026-09-04). Arquivos app/*.php > 400 linhas: nenhum (maior: BalanceService.php 389).
+    - phpstan-baseline.neon
 
 parameters:
     paths:
